@@ -1,0 +1,13 @@
+@inject NavigationManager Nav
+
+@code {
+    protected override void OnInitialized()
+    {
+        // Recuerda a que pagina queria entrar para volver a ella despues de iniciar sesion
+        var actual = Nav.ToBaseRelativePath(Nav.Uri);
+        var destino = string.IsNullOrWhiteSpace(actual)
+            ? "/login"
+            : $"/login?returnUrl={Uri.EscapeDataString("/" + actual)}";
+        Nav.NavigateTo(destino, replace: true);
+    }
+}

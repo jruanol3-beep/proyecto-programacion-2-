@@ -1,0 +1,42 @@
+<li class="nav-item">
+    <div class="d-flex align-items-center">
+        @if (!string.IsNullOrWhiteSpace(Item.Ruta))
+        {
+            <NavLink class="nav-link flex-grow-1" href="@Item.Ruta" @onclick="OnNavegar">
+                <i class="bi @(Item.Icono ?? "bi-dot") me-2"></i>@Item.Nombre
+            </NavLink>
+        }
+        else
+        {
+            <a class="nav-link flex-grow-1 fw-semibold" role="button" @onclick="Alternar" @onclick:preventDefault>
+                <i class="bi @(Item.Icono ?? "bi-dot") me-2"></i>@Item.Nombre
+            </a>
+        }
+
+        @if (Item.Hijos.Count > 0)
+        {
+            <button class="btn btn-sm text-secondary" @onclick="Alternar" aria-label="Mostrar u ocultar submenu">
+                <i class="bi @(abierto ? "bi-chevron-down" : "bi-chevron-right")"></i>
+            </button>
+        }
+    </div>
+
+    @if (abierto && Item.Hijos.Count > 0)
+    {
+        <ul class="nav flex-column submenu">
+            @foreach (var hijo in Item.Hijos)
+            {
+                <MenuNodo Item="hijo" OnNavegar="OnNavegar" />
+            }
+        </ul>
+    }
+</li>
+
+@code {
+    [Parameter, EditorRequired] public MenuDto Item { get; set; } = default!;
+    [Parameter] public EventCallback OnNavegar { get; set; }
+
+    private bool abierto = true;
+
+    private void Alternar() => abierto = !abierto;
+}

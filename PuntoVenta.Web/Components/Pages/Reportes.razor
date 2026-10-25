@@ -1,0 +1,203 @@
+@page "/reportes/{Tipo}"
+@attribute [Authorize]
+@inherits PaginaBase
+@inject IJSRuntime JS
+
+<PageTitle>@Titulo</PageTitle>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h1 class="h3 m-0"><i class="bi bi-bar-chart"></i> @Titulo</h1>
+    <button class="btn btn-outline-secondary no-imprimir" @onclick="Imprimir"><i class="bi bi-printer"></i> Imprimir</button>
+</div>
+
+<Alerta Mensaje="@Mensaje" Tipo="@TipoMensaje" OnCerrar="CerrarMensaje" />
+
+@if (Tipo is "compras" or "ventas")
+{
+    <div class="row g-2 align-items-end mb-3 no-imprimir">
+        <div class="col-sm-4 col-md-3">
+            <label class="form-label">Desde</label>
+            <input type="date" class="form-control" @bind="desde" />
+        </div>
+        <div class="col-sm-4 col-md-3">
+            <label class="form-label">Hasta</label>
+            <input type="date" class="form-control" @bind="hasta" />
+        </div>
+        <div class="col-sm-4 col-md-3 d-flex gap-2">
+            <button class="btn btn-primary" @onclick="Cargar"><i class="bi bi-funnel"></i> Filtrar</button>
+            <button class="btn btn-outline-secondary" @onclick="LimpiarFiltro">Limpiar</button>
+        </div>
+    </div>
+}
+
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        @if (Cargando)
+        {
+            <div class="text-center py-4"><div class="spinner-border spinner-border-sm"></div> Cargando...</div>
+        }
+        else if (Tipo == "productos")
+        {
+            <table class="table table-striped align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>Producto</th><th>Marca</th><th class="text-end">Existencia</th><th class="text-end">Precio Costo</th><th class="text-end">Precio Venta</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in productos)
+                    {
+                        <tr><td>@r.Producto</td><td>@r.Marca</td><td class="text-end">@r.Existencia</td><td class="text-end">Q @r.PrecioCosto.ToString("N2")</td><td class="text-end">Q @r.PrecioVenta.ToString("N2")</td></tr>
+                    }
+                    @if (productos.Count == 0) { <tr><td colspan="5" class="text-center text-secondary py-3">Sin datos.</td></tr> }
+                </tbody>
+            </table>
+        }
+        else if (Tipo == "existencias")
+        {
+            <table class="table table-striped align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>Producto</th><th>Marca</th><th class="text-end">Existencia</th><th class="text-end">Valor en inventario</th><th>Estado</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in existencias)
+                    {
+                        <tr>
+                            <td>@r.Producto</td><td>@r.Marca</td><td class="text-end">@r.Existencia</td>
+                            <td class="text-end">Q @r.ValorInventario.ToString("N2")</td>
+                            <td><span class="badge @(r.Estado == "Disponible" ? "text-bg-success" : r.Estado == "Stock bajo" ? "text-bg-warning" : "text-bg-danger")">@r.Estado</span></td>
+                        </tr>
+                    }
+                    @if (existencias.Count == 0) { <tr><td colspan="5" class="text-center text-secondary py-3">Sin datos.</td></tr> }
+                </tbody>
+                <tfoot>
+                    <tr class="table-light"><th colspan="3" class="text-end">Valor total del inventario</th><th class="text-end">Q @(existencias.Sum(x => x.ValorInventario).ToString("N2"))</th><th></th></tr>
+                </tfoot>
+            </table>
+        }
+        else if (Tipo == "compras")
+        {
+            <table class="table table-striped align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>Fecha</th><th>No. orden</th><th>Proveedor</th><th class="text-end">Articulos</th><th class="text-end">Total</th><th class="no-imprimir"></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in compras)
+                    {
+                        <tr><td>@r.Fecha.ToString("dd/MM/yyyy")</td><td>@r.NoOrden</td><td>@r.Proveedor</td><td class="text-end">@r.Articulos</td><td class="text-end">Q @r.Total.ToString("N2")</td>
+                            <td class="text-end no-imprimir"><button class="btn btn-sm btn-outline-primary" title="Imprimir orden de compra" @onclick="() => ImprimirCompra(r.IdCompra)"><i class="bi bi-printer"></i></button></td></tr>
+                    }
+                    @if (compras.Count == 0) { <tr><td colspan="6" class="text-center text-secondary py-3">Sin datos.</td></tr> }
+                </tbody>
+                <tfoot>
+                    <tr class="table-light"><th colspan="4" class="text-end">Total comprado</th><th class="text-end">Q @(compras.Sum(x => x.Total).ToString("N2"))</th><th class="no-imprimir"></th></tr>
+                </tfoot>
+            </table>
+        }
+        else if (Tipo == "ventas")
+        {
+            <table class="table table-striped align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>Fecha</th><th>Factura</th><th>Cliente</th><th>Empleado</th><th class="text-end">Total Venta</th><th class="no-imprimir"></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in ventas)
+                    {
+                        <tr><td>@r.Fecha.ToString("dd/MM/yyyy")</td><td>@r.Factura</td><td>@r.Cliente</td><td>@r.Empleado</td><td class="text-end">Q @r.Total.ToString("N2")</td>
+                            <td class="text-end no-imprimir"><button class="btn btn-sm btn-outline-primary" title="Imprimir factura" @onclick="() => ImprimirVenta(r.IdVenta)"><i class="bi bi-printer"></i></button></td></tr>
+                    }
+                    @if (ventas.Count == 0) { <tr><td colspan="6" class="text-center text-secondary py-3">Sin datos.</td></tr> }
+                </tbody>
+                <tfoot>
+                    <tr class="table-light"><th colspan="4" class="text-end">Total vendido</th><th class="text-end">Q @(ventas.Sum(x => x.Total).ToString("N2"))</th><th class="no-imprimir"></th></tr>
+                </tfoot>
+            </table>
+        }
+        else
+        {
+            <div class="alert alert-warning m-3">Reporte no reconocido.</div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Tipo { get; set; } = "";
+
+    private List<ReporteProductoDto> productos = new();
+    private List<ReporteExistenciaDto> existencias = new();
+    private List<ReporteCompraDto> compras = new();
+    private List<ReporteVentaDto> ventas = new();
+    private DateTime? desde;
+    private DateTime? hasta;
+    private string? tipoCargado;
+
+    private string Titulo => Tipo switch
+    {
+        "productos" => "Reporte de productos",
+        "existencias" => "Reporte de existencias",
+        "compras" => "Reporte de compras",
+        "ventas" => "Reporte de ventas",
+        _ => "Reportes"
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (tipoCargado == Tipo) return;
+        tipoCargado = Tipo;
+        desde = null;
+        hasta = null;
+        await Cargar();
+    }
+
+    private void LimpiarFiltro()
+    {
+        desde = null;
+        hasta = null;
+        _ = Cargar();
+    }
+
+    private string Filtro(string baseUrl)
+    {
+        var partes = new List<string>();
+        if (desde.HasValue) partes.Add($"desde={desde.Value:yyyy-MM-dd}");
+        if (hasta.HasValue) partes.Add($"hasta={hasta.Value:yyyy-MM-dd}");
+        return partes.Count == 0 ? baseUrl : $"{baseUrl}?{string.Join("&", partes)}";
+    }
+
+    private async Task Cargar()
+    {
+        CerrarMensaje();
+        if (desde.HasValue && hasta.HasValue && desde > hasta)
+        {
+            Aviso("La fecha inicial no puede ser mayor que la final.");
+            return;
+        }
+
+        Cargando = true;
+        await Ejecutar(async () =>
+        {
+            switch (Tipo)
+            {
+                case "productos": productos = await Api.GetAsync<List<ReporteProductoDto>>("api/Reportes/productos"); break;
+                case "existencias": existencias = await Api.GetAsync<List<ReporteExistenciaDto>>("api/Reportes/existencias"); break;
+                case "compras": compras = await Api.GetAsync<List<ReporteCompraDto>>(Filtro("api/Reportes/compras")); break;
+                case "ventas": ventas = await Api.GetAsync<List<ReporteVentaDto>>(Filtro("api/Reportes/ventas")); break;
+            }
+        });
+        Cargando = false;
+    }
+
+    private async Task Imprimir() => await JS.InvokeVoidAsync("window.print");
+
+    private async Task ImprimirVenta(int id)
+    {
+        VentaDto? venta = null;
+        if (await Ejecutar(async () => venta = await Api.GetAsync<VentaDto>($"api/Ventas/{id}")) && venta is not null)
+            await JS.InvokeVoidAsync("pvImprimir", DocumentoImpresion.Factura(venta));
+    }
+
+    private async Task ImprimirCompra(int id)
+    {
+        CompraDto? compra = null;
+        if (await Ejecutar(async () => compra = await Api.GetAsync<CompraDto>($"api/Compras/{id}")) && compra is not null)
+            await JS.InvokeVoidAsync("pvImprimir", DocumentoImpresion.OrdenCompra(compra));
+    }
+}

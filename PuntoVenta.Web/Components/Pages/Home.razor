@@ -1,0 +1,31 @@
+@page "/"
+@attribute [Authorize]
+@inject SesionService Sesion
+
+<PageTitle>Inicio</PageTitle>
+
+<h1 class="h3 mb-1">Bienvenido, @(Sesion.Actual?.NombreCompleto)</h1>
+<p class="text-secondary">Use el menu de la izquierda para administrar productos, ventas, compras y reportes.</p>
+
+<div class="row g-3">
+    <div class="col-sm-6 col-xl-3">
+        <a href="/productos" class="card text-decoration-none h-100 shadow-sm">
+            <div class="card-body"><i class="bi bi-box-seam fs-2 text-primary"></i><div class="fw-semibold mt-2">Productos</div></div>
+        </a>
+    </div>
+    <div class="col-sm-6 col-xl-3">
+        <a href="/ventas" class="card text-decoration-none h-100 shadow-sm">
+            <div class="card-body"><i class="bi bi-cart-check fs-2 text-success"></i><div class="fw-semibold mt-2">Ventas</div></div>
+        </a>
+    </div>
+    <div class="col-sm-6 col-xl-3">
+        <a href="/compras" class="card text-decoration-none h-100 shadow-sm">
+            <div class="card-body"><i class="bi bi-bag-plus fs-2 text-warning"></i><div class="fw-semibold mt-2">Compras</div></div>
+        </a>
+    </div>
+    <div class="col-sm-6 col-xl-3">
+        <a href="/reportes/ventas" class="card text-decoration-none h-100 shadow-sm">
+            <div class="card-body"><i class="bi bi-bar-chart fs-2 text-danger"></i><div class="fw-semibold mt-2">Reportes</div></div>
+        </a>
+    </div>
+</div>

@@ -1,0 +1,657 @@
+@page "/ventas"
+@attribute [Authorize]
+@inherits PaginaBase
+@inject IJSRuntime JS
+@inject BorradorVenta Borrador
+
+<PageTitle>Ventas</PageTitle>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h1 class="h3 m-0"><i class="bi bi-cart-check"></i> Ventas</h1>
+    @if (!enForm)
+    {
+        <div class="d-flex gap-2">
+            <a href="/clientes" class="btn btn-outline-secondary"><i class="bi bi-people"></i> Clientes</a>
+            <a href="/empleados" class="btn btn-outline-secondary"><i class="bi bi-person-badge"></i> Empleados</a>
+            <button class="btn btn-primary" @onclick="Nueva"><i class="bi bi-plus-lg"></i> Nueva venta</button>
+        </div>
+    }
+</div>
+
+<Alerta Mensaje="@Mensaje" Tipo="@TipoMensaje" OnCerrar="CerrarMensaje" />
+
+@if (enForm)
+{
+    <EditForm Model="nueva" OnValidSubmit="Guardar" novalidate>
+        <DataAnnotationsValidator />
+
+        <div class="card shadow-sm mb-3">
+            <div class="card-header fw-semibold">Datos de la venta (maestro)</div>
+            <div class="card-body">
+                <div class="row g-3">
+
+                    @* ===== Cliente: Consumidor final o NIT ===== *@
+                    <div class="col-12">
+                        <label class="form-label">Cliente *</label>
+                        @if (clienteSel is null)
+                        {
+                            <div class="d-flex flex-wrap gap-2">
+                                <button type="button" class="btn btn-outline-primary" @onclick="ElegirConsumidorFinal">
+                                    <i class="bi bi-person"></i> Consumidor final (C/F)
+                                </button>
+                                <button type="button" class="btn btn-outline-primary" @onclick="AbrirModalCliente">
+                                    <i class="bi bi-upc"></i> Ingresar NIT
+                                </button>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="alert alert-success d-flex justify-content-between align-items-center py-2 mb-0">
+                                <div>
+                                    <i class="bi bi-person-check"></i>
+                                    <strong>@clienteSel.Nombres @clienteSel.Apellidos</strong>
+                                    <span class="text-secondary ms-2">NIT: @(string.IsNullOrWhiteSpace(clienteSel.Nit) ? "-" : clienteSel.Nit)</span>
+                                </div>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CambiarCliente">Cambiar</button>
+                            </div>
+                        }
+                        <ValidationMessage For="() => nueva.IdCliente" />
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label">Empleado *</label>
+                        <div class="input-group">
+                            <InputSelect class="form-select" @bind-Value="nueva.IdEmpleado">
+                                <option value="0">-- Seleccione un empleado --</option>
+                                @foreach (var e in empleados)
+                                {
+                                    <option value="@e.IdEmpleado">@e.Nombres @e.Apellidos</option>
+                                }
+                            </InputSelect>
+                            <a href="/empleados" target="_blank" class="btn btn-outline-secondary" title="Abrir Empleados en otra pestaña"><i class="bi bi-plus-lg"></i></a>
+                        </div>
+                        <ValidationMessage For="() => nueva.IdEmpleado" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Fecha *</label>
+                        <InputDate class="form-control" @bind-Value="nueva.FechaFactura" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Factura</label>
+                        <input class="form-control" value="Automatica" disabled />
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mb-3">
+            <div class="card-header fw-semibold">Productos vendidos (detalle)</div>
+            <div class="card-body">
+                <div class="row g-2 align-items-end mb-3">
+
+                    @* ===== Producto con autocompletado ===== *@
+                    <div class="col-md-6 position-relative">
+                        <label class="form-label">Producto</label>
+                        <input class="form-control" placeholder="Escriba para buscar por nombre o marca..." autocomplete="off"
+                               form="sin-form" @ref="productoRef"
+                               value="@textoProducto" @oninput="AlEscribirProducto"
+                               @onfocus="() => mostrarSugerencias = true"
+                               @onblur="() => mostrarSugerencias = false"
+                               @onkeydown="TeclaProducto" />
+                        @if (mostrarSugerencias)
+                        {
+                            var sugeridos = Sugerencias.ToList();
+                            <div class="list-group position-absolute w-100 shadow" style="z-index: 1050; max-height: 320px; overflow-y: auto;">
+                                @if (sugeridos.Count == 0)
+                                {
+                                    <div class="list-group-item text-secondary">Sin resultados</div>
+                                }
+                                @foreach (var p in sugeridos)
+                                {
+                                    <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                                            @onmousedown="() => SeleccionarProducto(p)" @onmousedown:preventDefault>
+                                        <span><strong>@p.Nombre</strong> <small class="text-secondary">@p.Marca?.Nombre</small></span>
+                                        <span class="text-nowrap">
+                                            <span class="me-2">Q @p.PrecioVenta.ToString("N2")</span>
+                                            <span class="badge @(p.Existencia > 0 ? "text-bg-success" : "text-bg-danger")">@p.Existencia</span>
+                                        </span>
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Cantidad</label>
+                        <input type="number" min="1" step="1" class="form-control" form="sin-form"
+                               @ref="cantidadRef" @bind="lineaCantidad" @bind:event="oninput" @onkeydown="TeclaCantidad" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Precio venta</label>
+                        <input class="form-control" value="@(PrecioElegido is decimal pv ? $"Q {pv:N2}" : "")" disabled />
+                    </div>
+                    <div class="col-md-2">
+                        <button type="button" class="btn btn-success w-100" @onclick="AgregarLinea"><i class="bi bi-plus-circle"></i> Agregar</button>
+                    </div>
+                </div>
+
+                @if (errorLinea is not null)
+                {
+                    <div class="alert alert-danger py-2"><i class="bi bi-exclamation-triangle"></i> @errorLinea</div>
+                }
+
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <thead class="table-light">
+                            <tr><th>Producto</th><th class="text-end">Cantidad</th><th class="text-end">Precio</th><th class="text-end">Subtotal</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            @if (lineas.Count == 0)
+                            {
+                                <tr><td colspan="5" class="text-center text-secondary py-3">Aun no hay productos en la venta.</td></tr>
+                            }
+                            @foreach (var l in lineas)
+                            {
+                                <tr>
+                                    <td>@l.Producto.Nombre</td>
+                                    <td class="text-end">@l.Cantidad</td>
+                                    <td class="text-end">Q @l.Producto.PrecioVenta.ToString("N2")</td>
+                                    <td class="text-end">Q @((l.Cantidad * l.Producto.PrecioVenta).ToString("N2"))</td>
+                                    <td class="text-end">
+                                        <button type="button" class="btn btn-sm btn-outline-danger" title="Quitar" @onclick="() => Quitar(l)"><i class="bi bi-x-lg"></i></button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr class="table-light">
+                                <th colspan="3" class="text-end">Total de la venta</th>
+                                <th class="text-end fs-5">Q @Total.ToString("N2")</th>
+                                <th></th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                @if (errorGuardar is not null)
+                {
+                    <div class="text-danger small mb-2">@errorGuardar</div>
+                }
+                <ValidationMessage For="() => nueva.Detalles" />
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-end gap-2">
+            <button type="button" class="btn btn-secondary" @onclick="CancelarForm">Cancelar</button>
+            <button type="submit" class="btn btn-primary" disabled="@guardando"><i class="bi bi-check2-circle"></i> Confirmar venta</button>
+        </div>
+    </EditForm>
+}
+else
+{
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>Factura</th><th>Fecha</th><th>Cliente</th><th>Empleado</th><th class="text-end">Total</th><th class="text-end">Detalle</th></tr>
+                </thead>
+                <tbody>
+                    @if (Cargando)
+                    {
+                        <tr><td colspan="6" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div> Cargando...</td></tr>
+                    }
+                    else if (ventas.Count == 0)
+                    {
+                        <tr><td colspan="6" class="text-center text-secondary py-4">No hay ventas registradas.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var v in ventas)
+                        {
+                            <tr>
+                                <td>@v.Serie-@v.NoFactura</td>
+                                <td>@v.FechaFactura.ToString("dd/MM/yyyy")</td>
+                                <td>@v.Cliente</td>
+                                <td>@v.Empleado</td>
+                                <td class="text-end">Q @v.Total.ToString("N2")</td>
+                                <td class="text-end"><button class="btn btn-sm btn-outline-primary" @onclick="() => ver = v"><i class="bi bi-eye"></i> Ver</button></td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+<Modal Visible="ver is not null" Title="@($"Factura {ver?.Serie}-{ver?.NoFactura}")" OnClose="() => ver = null">
+    @if (ver is not null)
+    {
+        <div class="text-end mb-2">
+            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="() => ImprimirFactura(ver)"><i class="bi bi-printer"></i> Imprimir factura</button>
+        </div>
+        <p class="mb-2">
+            <strong>Cliente:</strong> @ver.Cliente<br />
+            <strong>Atendio:</strong> @ver.Empleado<br />
+            <strong>Fecha:</strong> @ver.FechaFactura.ToString("dd/MM/yyyy")
+        </p>
+        <table class="table table-sm">
+            <thead class="table-light"><tr><th>Producto</th><th class="text-end">Cantidad</th><th class="text-end">Precio</th><th class="text-end">Subtotal</th></tr></thead>
+            <tbody>
+                @foreach (var d in ver.Detalles)
+                {
+                    <tr><td>@d.Producto</td><td class="text-end">@d.Cantidad</td><td class="text-end">Q @d.PrecioUnitario.ToString("N2")</td><td class="text-end">Q @d.Subtotal.ToString("N2")</td></tr>
+                }
+            </tbody>
+            <tfoot><tr class="table-light"><th colspan="3" class="text-end">Total</th><th class="text-end">Q @ver.Total.ToString("N2")</th></tr></tfoot>
+        </table>
+    }
+</Modal>
+
+@* ===== Ventana del cliente: buscar por NIT o registrarlo, SIN salir de la venta ===== *@
+<Modal Visible="mostrarModalCliente" Title="Cliente de la venta" OnClose="CerrarModalCliente">
+    @if (errorCliente is not null)
+    {
+        <div class="alert alert-danger py-2">@errorCliente</div>
+    }
+
+    <label class="form-label">NIT *</label>
+    <div class="input-group mb-3">
+        <input class="form-control" placeholder="Ingrese el NIT del cliente" autocomplete="off"
+               value="@nitBusqueda" @oninput="AlEscribirNit" @onkeydown="TeclaNit" />
+        <button type="button" class="btn btn-primary" disabled="@buscandoNit" @onclick="BuscarNit">
+            <i class="bi bi-search"></i> Buscar
+        </button>
+    </div>
+
+    @if (clienteEncontrado is not null)
+    {
+        <div class="alert alert-success">
+            <div class="fw-semibold mb-1"><i class="bi bi-person-check"></i> Cliente encontrado</div>
+            <div>@clienteEncontrado.Nombres @clienteEncontrado.Apellidos</div>
+            <div class="small text-secondary">
+                NIT: @clienteEncontrado.Nit
+                @if (!string.IsNullOrWhiteSpace(clienteEncontrado.Telefono)) { <text> | Tel: @clienteEncontrado.Telefono</text> }
+                @if (!string.IsNullOrWhiteSpace(clienteEncontrado.Direccion)) { <text> | @clienteEncontrado.Direccion</text> }
+            </div>
+        </div>
+        <div class="d-flex justify-content-end gap-2">
+            <button type="button" class="btn btn-secondary" @onclick="CerrarModalCliente">Cancelar</button>
+            <button type="button" class="btn btn-primary" @onclick="UsarClienteEncontrado"><i class="bi bi-check2"></i> Usar este cliente</button>
+        </div>
+    }
+    else if (nitBuscado)
+    {
+        <div class="alert alert-warning py-2">
+            <i class="bi bi-exclamation-triangle"></i> No existe un cliente con ese NIT. Complete los datos para registrarlo.
+        </div>
+        <EditForm Model="nuevoCliente" OnValidSubmit="GuardarCliente">
+            <DataAnnotationsValidator />
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Nombres *</label>
+                    <InputText class="form-control" @bind-Value="nuevoCliente.Nombres" />
+                    <ValidationMessage For="() => nuevoCliente.Nombres" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Apellidos *</label>
+                    <InputText class="form-control" @bind-Value="nuevoCliente.Apellidos" />
+                    <ValidationMessage For="() => nuevoCliente.Apellidos" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Genero</label>
+                    <InputSelect class="form-select" @bind-Value="nuevoCliente.Genero">
+                        <option value="">-- Sin especificar --</option>
+                        <option value="true">Masculino</option>
+                        <option value="false">Femenino</option>
+                    </InputSelect>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Telefono</label>
+                    <InputText class="form-control" @bind-Value="nuevoCliente.Telefono" />
+                    <ValidationMessage For="() => nuevoCliente.Telefono" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Correo electronico</label>
+                    <InputText type="email" class="form-control" @bind-Value="nuevoCliente.Correo" />
+                    <ValidationMessage For="() => nuevoCliente.Correo" />
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Direccion</label>
+                    <InputText class="form-control" @bind-Value="nuevoCliente.Direccion" />
+                    <ValidationMessage For="() => nuevoCliente.Direccion" />
+                </div>
+            </div>
+            <div class="d-flex justify-content-end gap-2 mt-4">
+                <button type="button" class="btn btn-secondary" @onclick="CerrarModalCliente">Cancelar</button>
+                <button type="submit" class="btn btn-primary" disabled="@guardandoCliente"><i class="bi bi-save"></i> Guardar y usar en la venta</button>
+            </div>
+        </EditForm>
+    }
+</Modal>
+
+@code {
+    private List<VentaDto> ventas = new();
+    private List<Cliente> clientes = new();
+    private List<Empleado> empleados = new();
+    private List<Producto> productos = new();
+    // El carrito vive en BorradorVenta (servicio) para no perderlo al ir a otra pantalla del menu
+    private List<LineaVenta> lineas => Borrador.Lineas;
+    private VentaCrearDto nueva { get => Borrador.Nueva; set => Borrador.Nueva = value; }
+    private VentaDto? ver;
+    private bool enForm { get => Borrador.Activo; set => Borrador.Activo = value; }
+    private bool guardando;
+
+    // Producto (autocompletado)
+    private int lineaProducto;
+    private int lineaCantidad = 1;
+    private string textoProducto = "";
+    private bool mostrarSugerencias;
+    private string? errorLinea;
+    private string? errorGuardar;
+    private ElementReference productoRef;
+    private ElementReference cantidadRef;
+
+    // Cliente
+    private Cliente? clienteSel { get => Borrador.Cliente; set => Borrador.Cliente = value; }
+    private Cliente? clienteEncontrado;
+    private Cliente nuevoCliente = new();
+    private string nitBusqueda = "";
+    private bool nitBuscado;
+    private bool buscandoNit;
+    private bool mostrarModalCliente;
+    private bool guardandoCliente;
+    private string? errorCliente;
+
+    private decimal Total => lineas.Sum(l => l.Cantidad * l.Producto.PrecioVenta);
+    private decimal? PrecioElegido => productos.FirstOrDefault(p => p.IdProducto == lineaProducto)?.PrecioVenta;
+
+    // Sugerencias: cada palabra escrita debe aparecer en nombre, marca o descripcion
+    private IEnumerable<Producto> Sugerencias
+    {
+        get
+        {
+            var palabras = (textoProducto ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var q = productos.AsEnumerable();
+            foreach (var palabra in palabras)
+            {
+                var w = palabra;
+                q = q.Where(p =>
+                    p.Nombre.Contains(w, StringComparison.OrdinalIgnoreCase)
+                    || (p.Marca?.Nombre ?? "").Contains(w, StringComparison.OrdinalIgnoreCase)
+                    || (p.Descripcion ?? "").Contains(w, StringComparison.OrdinalIgnoreCase));
+            }
+            return q.Take(8);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarLista();
+
+        // Si se dejo una venta a medias, se recupera (hay que volver a cargar los catalogos)
+        if (enForm)
+        {
+            var ok = await Ejecutar(async () =>
+            {
+                clientes = await Api.GetAsync<List<Cliente>>("api/Clientes");
+                empleados = await Api.GetAsync<List<Empleado>>("api/Empleados");
+                productos = await Api.GetAsync<List<Producto>>("api/Productos");
+            });
+            if (!ok) enForm = false;
+        }
+    }
+
+    private async Task CargarLista()
+    {
+        Cargando = true;
+        await Ejecutar(async () => ventas = await Api.GetAsync<List<VentaDto>>("api/Ventas"));
+        Cargando = false;
+    }
+
+    private async Task Nueva()
+    {
+        CerrarMensaje();
+        var ok = await Ejecutar(async () =>
+        {
+            clientes = await Api.GetAsync<List<Cliente>>("api/Clientes");
+            empleados = await Api.GetAsync<List<Empleado>>("api/Empleados");
+            productos = await Api.GetAsync<List<Producto>>("api/Productos"); // existencias actuales
+        });
+        if (!ok) return;
+
+        if (empleados.Count == 0) { Aviso("Primero registre al menos un empleado."); return; }
+
+        Borrador.Reiniciar();
+        lineaProducto = 0; lineaCantidad = 1; textoProducto = ""; mostrarSugerencias = false;
+        errorLinea = null; errorGuardar = null;
+        mostrarModalCliente = false;
+        enForm = true;
+    }
+
+    private void CancelarForm()
+    {
+        enForm = false;
+        Borrador.Reiniciar();
+    }
+
+    // ---------------- Cliente ----------------
+    private static string NormalizarNit(string? nit) =>
+        new string((nit ?? "").Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
+
+    private void AsignarCliente(Cliente c)
+    {
+        clienteSel = c;
+        nueva.IdCliente = c.IdCliente;
+    }
+
+    private async Task ElegirConsumidorFinal()
+    {
+        var cf = clientes.FirstOrDefault(c => NormalizarNit(c.Nit) == "CF");
+        if (cf is null)
+        {
+            // Si todavia no existe el cliente "Consumidor Final", se crea una sola vez
+            var ok = await Ejecutar(async () =>
+                cf = await Api.PostAsync<Cliente>("api/Clientes",
+                    new Cliente { Nombres = "Consumidor", Apellidos = "Final", Nit = "CF", Direccion = "Ciudad" }));
+            if (!ok || cf is null) return;
+            clientes.Add(cf);
+        }
+        AsignarCliente(cf);
+    }
+
+    private void CambiarCliente()
+    {
+        clienteSel = null;
+        nueva.IdCliente = 0;
+    }
+
+    private void AbrirModalCliente()
+    {
+        nitBusqueda = "";
+        nitBuscado = false;
+        clienteEncontrado = null;
+        nuevoCliente = new Cliente();
+        errorCliente = null;
+        mostrarModalCliente = true;
+    }
+
+    private void CerrarModalCliente() => mostrarModalCliente = false;
+
+    private void AlEscribirNit(ChangeEventArgs e)
+    {
+        nitBusqueda = e.Value?.ToString() ?? "";
+        nitBuscado = false;
+        clienteEncontrado = null;
+        errorCliente = null;
+    }
+
+    private async Task TeclaNit(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await BuscarNit();
+    }
+
+    private async Task BuscarNit()
+    {
+        errorCliente = null;
+        clienteEncontrado = null;
+        nitBuscado = false;
+
+        var buscado = NormalizarNit(nitBusqueda);
+        if (buscado.Length == 0) { errorCliente = "Ingrese un NIT para buscar."; return; }
+        if (buscado == "CF")
+        {
+            mostrarModalCliente = false;
+            await ElegirConsumidorFinal();
+            return;
+        }
+
+        buscandoNit = true;
+        var ok = await Ejecutar(async () => clientes = await Api.GetAsync<List<Cliente>>("api/Clientes"));
+        buscandoNit = false;
+        if (!ok) return;
+
+        clienteEncontrado = clientes.FirstOrDefault(x => NormalizarNit(x.Nit) == buscado);
+        if (clienteEncontrado is null)
+        {
+            nuevoCliente = new Cliente { Nit = nitBusqueda.Trim() };
+            nitBuscado = true;
+        }
+    }
+
+    private void UsarClienteEncontrado()
+    {
+        if (clienteEncontrado is null) return;
+        AsignarCliente(clienteEncontrado);
+        mostrarModalCliente = false;
+    }
+
+    private async Task GuardarCliente()
+    {
+        guardandoCliente = true;
+        errorCliente = null;
+        try
+        {
+            var creado = await Api.PostAsync<Cliente>("api/Clientes", nuevoCliente);
+            clientes.Add(creado);
+            AsignarCliente(creado);
+            mostrarModalCliente = false;
+            Exito("Cliente registrado y seleccionado para la venta.");
+        }
+        catch (ApiException ex) { errorCliente = ex.Message; }
+        finally { guardandoCliente = false; }
+    }
+
+    // ---------------- Producto (autocompletado) ----------------
+    private void AlEscribirProducto(ChangeEventArgs e)
+    {
+        textoProducto = e.Value?.ToString() ?? "";
+        lineaProducto = 0;               // al editar el texto se descarta la seleccion anterior
+        mostrarSugerencias = true;
+        errorLinea = null;
+    }
+
+    private async Task SeleccionarProducto(Producto p)
+    {
+        lineaProducto = p.IdProducto;
+        textoProducto = p.Nombre;
+        mostrarSugerencias = false;
+        errorLinea = null;
+        await cantidadRef.FocusAsync();
+    }
+
+    private async Task TeclaProducto(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") { mostrarSugerencias = false; return; }
+        if (e.Key != "Enter") return;
+
+        if (lineaProducto == 0)
+        {
+            var primero = Sugerencias.FirstOrDefault();
+            if (primero is not null) await SeleccionarProducto(primero);
+        }
+        else await cantidadRef.FocusAsync();
+    }
+
+    private async Task TeclaCantidad(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await AgregarLinea();
+    }
+
+    private async Task AgregarLinea()
+    {
+        errorLinea = null;
+        errorGuardar = null;
+
+        var producto = productos.FirstOrDefault(p => p.IdProducto == lineaProducto);
+        if (producto is null) { errorLinea = "Busque y seleccione un producto de la lista."; return; }
+        if (lineaCantidad <= 0) { errorLinea = "La cantidad debe ser mayor a cero."; return; }
+
+        // Se verifica la existencia ANTES de agregar el producto (contando lo ya agregado)
+        var existente = lineas.FirstOrDefault(l => l.Producto.IdProducto == producto.IdProducto);
+        var yaAgregado = existente?.Cantidad ?? 0;
+        var solicitado = yaAgregado + lineaCantidad;
+        if (solicitado > producto.Existencia)
+        {
+            errorLinea = $"No se puede realizar la venta. Existencia insuficiente de '{producto.Nombre}' " +
+                         $"(disponible: {producto.Existencia}, solicitado: {solicitado}).";
+            return;
+        }
+
+        if (existente is not null) existente.Cantidad = solicitado;
+        else lineas.Add(new LineaVenta { Producto = producto, Cantidad = lineaCantidad });
+
+        Sincronizar();
+        lineaProducto = 0;
+        lineaCantidad = 1;
+        textoProducto = "";
+        await productoRef.FocusAsync();   // listo para escribir el siguiente producto
+    }
+
+    private void Quitar(LineaVenta l)
+    {
+        lineas.Remove(l);
+        Sincronizar();
+    }
+
+    // El detalle del DTO se mantiene al dia para que la validacion (minimo un producto) funcione
+    private void Sincronizar()
+    {
+        nueva.Detalles = lineas.Select(l => new VentaDetalleCrearDto
+        {
+            IdProducto = l.Producto.IdProducto,
+            Cantidad = l.Cantidad
+        }).ToList();
+    }
+
+    private async Task ImprimirFactura(VentaDto v) =>
+        await JS.InvokeVoidAsync("pvImprimir", DocumentoImpresion.Factura(v));
+
+    private async Task Guardar()
+    {
+        errorGuardar = null;
+        if (lineas.Count == 0)
+        {
+            errorGuardar = "La venta debe tener al menos un producto.";
+            return;
+        }
+
+        Sincronizar();
+
+        guardando = true;
+        try
+        {
+            var creada = await Api.PostAsync<VentaDto>("api/Ventas", nueva);
+            enForm = false;
+            Borrador.Reiniciar();
+            Exito($"Venta registrada: factura {creada.Serie}-{creada.NoFactura} por Q {creada.Total:N2}. Existencias actualizadas.");
+            await CargarLista();
+            ver = creada;                    // muestra la factura y abre la pantalla de impresion
+            await ImprimirFactura(creada);
+        }
+        catch (ApiException ex)
+        {
+            errorGuardar = ex.Message;
+            Fallo(ex.Message);
+        }
+        finally { guardando = false; }
+    }
+}

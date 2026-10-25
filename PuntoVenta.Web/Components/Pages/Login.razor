@@ -1,0 +1,85 @@
+@page "/login"
+@layout EmptyLayout
+@inherits PaginaBase
+@inject SesionService Sesion
+
+<PageTitle>Iniciar sesion</PageTitle>
+
+<div class="login-wrap">
+    <div class="card shadow-lg border-0" style="width: 100%; max-width: 400px;">
+        <div class="card-body p-4">
+            <div class="text-center mb-4">
+                <i class="bi bi-shop text-primary" style="font-size: 2.5rem;"></i>
+                <h1 class="h4 mt-2 mb-0">Punto de Venta</h1>
+                <small class="text-secondary">Inicie sesion para continuar</small>
+            </div>
+
+            <Alerta Mensaje="@Mensaje" Tipo="@TipoMensaje" OnCerrar="CerrarMensaje" />
+
+            <EditForm Model="modelo" OnValidSubmit="IniciarSesion" FormName="login">
+                <DataAnnotationsValidator />
+
+                <div class="mb-3">
+                    <label class="form-label">Usuario</label>
+                    <InputText class="form-control" @bind-Value="modelo.Usuario" autocomplete="username" />
+                    <ValidationMessage For="() => modelo.Usuario" />
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Contraseña</label>
+                    <InputText type="password" class="form-control" @bind-Value="modelo.Password" autocomplete="current-password" />
+                    <ValidationMessage For="() => modelo.Password" />
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100" disabled="@Cargando">
+                    @if (Cargando)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                    }
+                    Ingresar
+                </button>
+            </EditForm>
+        </div>
+    </div>
+</div>
+
+@code {
+    private readonly LoginRequest modelo = new();
+
+    [SupplyParameterFromQuery(Name = "returnUrl")]
+    public string? ReturnUrl { get; set; }
+
+    // Solo se acepta una ruta interna (empieza con "/" y no con "//") para evitar redirecciones a otros sitios
+    private string Destino =>
+        !string.IsNullOrWhiteSpace(ReturnUrl) && ReturnUrl.StartsWith('/') && !ReturnUrl.StartsWith("//")
+            ? ReturnUrl : "/";
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Si ya hay una sesion valida, pasa directo a la pagina solicitada
+        if (await Sesion.ObtenerAsync() is not null)
+            Nav.NavigateTo(Destino, replace: true);
+    }
+
+    private async Task IniciarSesion()
+    {
+        Cargando = true;
+        CerrarMensaje();
+
+        try
+        {
+            // La API valida usuario/contraseña y devuelve el JWT
+            var respuesta = await Api.PostAsync<LoginResponse>("api/Auth/login", modelo);
+            await Sesion.IniciarAsync(respuesta);
+            Nav.NavigateTo(Destino, replace: true);
+        }
+        catch (ApiException ex)
+        {
+            Fallo(ex.Message);
+        }
+        finally
+        {
+            Cargando = false;
+        }
+    }
+}

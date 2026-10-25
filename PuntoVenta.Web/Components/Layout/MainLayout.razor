@@ -1,0 +1,90 @@
+@inherits LayoutComponentBase
+@inject ApiClient Api
+@inject SesionService Sesion
+@inject NavigationManager Nav
+
+<div class="app-shell">
+    <aside class="sidebar @(menuAbierto ? "abierto" : "")">
+        <div class="sidebar-brand">
+            <i class="bi bi-shop"></i> Punto de Venta
+        </div>
+
+        <nav class="sidebar-nav">
+            <ul class="nav flex-column">
+                <li class="nav-item">
+                    <NavLink class="nav-link" href="/" Match="NavLinkMatch.All" @onclick="CerrarMenuMovil">
+                        <i class="bi bi-house-door me-2"></i> Inicio
+                    </NavLink>
+                </li>
+
+                @if (cargandoMenu)
+                {
+                    <li class="nav-item px-3 py-2 text-secondary small">Cargando menu...</li>
+                }
+                else if (errorMenu is not null)
+                {
+                    <li class="nav-item px-3 py-2 text-warning small">@errorMenu</li>
+                }
+                else
+                {
+                    @foreach (var item in menu)
+                    {
+                        <MenuNodo Item="item" OnNavegar="CerrarMenuMovil" />
+                    }
+                }
+            </ul>
+        </nav>
+
+        <div class="sidebar-user">
+            <div class="small text-secondary">Sesion iniciada como</div>
+            <div class="fw-semibold text-truncate">@(Sesion.Actual?.NombreCompleto ?? "")</div>
+            <div class="small text-secondary mb-2">@(Sesion.Actual?.Rol ?? "")</div>
+            <button class="btn btn-sm btn-outline-light w-100" @onclick="CerrarSesion">
+                <i class="bi bi-box-arrow-right"></i> Cerrar sesion
+            </button>
+        </div>
+    </aside>
+
+    <div class="content-area">
+        <header class="topbar">
+            <button class="btn btn-outline-secondary d-lg-none" @onclick="() => menuAbierto = !menuAbierto" aria-label="Menu">
+                <i class="bi bi-list"></i>
+            </button>
+            <span class="text-secondary small ms-auto d-none d-md-inline">@DateTime.Now.ToString("dddd dd 'de' MMMM yyyy")</span>
+        </header>
+
+        <main class="p-3 p-md-4">
+            @Body
+        </main>
+    </div>
+</div>
+
+@code {
+    private List<MenuDto> menu = new();
+    private bool cargandoMenu = true;
+    private bool menuAbierto;
+    private string? errorMenu;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Sesion.ObtenerAsync();
+        try
+        {
+            // El menu NO esta escrito en Blazor: se construye con lo que devuelve la API (tabla menu)
+            menu = await Api.GetAsync<List<MenuDto>>("api/Menu");
+        }
+        catch (ApiException ex)
+        {
+            errorMenu = ex.Message;
+        }
+        cargandoMenu = false;
+    }
+
+    private void CerrarMenuMovil() => menuAbierto = false;
+
+    private async Task CerrarSesion()
+    {
+        await Sesion.CerrarAsync();
+        Nav.NavigateTo("/login", replace: true);
+    }
+}

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <link rel="stylesheet" href="lib/bootstrap/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="lib/bootstrap-icons/font/bootstrap-icons.min.css" />
+    <link rel="stylesheet" href="app.css" />
+    <HeadOutlet @rendermode="Modo" />
+</head>
+
+<body>
+    <Routes @rendermode="Modo" />
+    <script src="pv.js"></script>
+    <script src="_framework/blazor.web.js"></script>
+</body>
+
+</html>
+
+@code {
+    // Sin prerenderizado: la sesion (JWT) vive en el navegador y se lee una vez conectado el circuito.
+    private static readonly IComponentRenderMode Modo = new InteractiveServerRenderMode(prerender: false);
+}

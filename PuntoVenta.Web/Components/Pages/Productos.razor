@@ -1,0 +1,273 @@
+@page "/productos"
+@attribute [Authorize]
+@inherits PaginaBase
+
+<PageTitle>Productos</PageTitle>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h1 class="h3 m-0"><i class="bi bi-box-seam"></i> Productos</h1>
+    <div class="d-flex gap-2">
+        <a href="/marcas" class="btn btn-outline-secondary"><i class="bi bi-tags"></i> Administrar marcas</a>
+        <button class="btn btn-primary" @onclick="Nuevo"><i class="bi bi-plus-lg"></i> Nuevo producto</button>
+    </div>
+</div>
+
+<Alerta Mensaje="@Mensaje" Tipo="@TipoMensaje" OnCerrar="CerrarMensaje" />
+
+<div class="input-group mb-3">
+    <span class="input-group-text"><i class="bi bi-search"></i></span>
+    <input class="form-control" placeholder="Buscar por producto, marca o descripcion..."
+           @bind="buscar" @bind:event="oninput" @bind:after="Cargar" />
+</div>
+
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th style="width:70px">Imagen</th><th>Producto</th><th>Marca</th>
+                    <th class="text-end">Costo</th><th class="text-end">Venta</th><th class="text-end">Existencia</th>
+                    <th>Ingreso</th><th class="text-end">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Cargando)
+                {
+                    <tr><td colspan="8" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div> Cargando...</td></tr>
+                }
+                else if (items.Count == 0)
+                {
+                    <tr><td colspan="8" class="text-center text-secondary py-4">No hay productos registrados.</td></tr>
+                }
+                else
+                {
+                    @foreach (var p in items)
+                    {
+                        <tr>
+                            <td>
+                                @if (Api.UrlImagen(p.Imagen) is { } url)
+                                {
+                                    <img src="@url" class="miniatura" alt="@p.Nombre" />
+                                }
+                                else
+                                {
+                                    <div class="miniatura d-flex align-items-center justify-content-center text-secondary bg-light"><i class="bi bi-image"></i></div>
+                                }
+                            </td>
+                            <td>
+                                <div class="fw-semibold">@p.Nombre</div>
+                                <div class="small text-secondary">@p.Descripcion</div>
+                            </td>
+                            <td>@p.Marca?.Nombre</td>
+                            <td class="text-end">Q @p.PrecioCosto.ToString("N2")</td>
+                            <td class="text-end">Q @p.PrecioVenta.ToString("N2")</td>
+                            <td class="text-end">
+                                <span class="badge @(p.Existencia == 0 ? "text-bg-danger" : p.Existencia <= 5 ? "text-bg-warning" : "text-bg-success")">@p.Existencia</span>
+                            </td>
+                            <td>@p.FechaIngreso.ToString("dd/MM/yyyy")</td>
+                            <td class="text-end text-nowrap">
+                                <button class="btn btn-sm btn-outline-primary" title="Editar" @onclick="() => Editar(p)"><i class="bi bi-pencil"></i></button>
+                                <button class="btn btn-sm btn-outline-danger" title="Eliminar" @onclick="() => eliminando = p"><i class="bi bi-trash"></i></button>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<Modal Visible="mostrarForm" Title="@(modelo.IdProducto == 0 ? "Nuevo producto" : "Editar producto")" OnClose="Cancelar">
+    @if (errorForm is not null)
+    {
+        <div class="alert alert-danger">@errorForm</div>
+    }
+    <EditForm Model="modelo" OnValidSubmit="Guardar">
+        <DataAnnotationsValidator />
+        <div class="row g-3">
+            <div class="col-md-7">
+                <label class="form-label">Producto *</label>
+                <InputText class="form-control" @bind-Value="modelo.Nombre" />
+                <ValidationMessage For="() => modelo.Nombre" />
+            </div>
+            <div class="col-md-5">
+                <label class="form-label">Marca *</label>
+                <div class="input-group">
+                    <InputSelect class="form-select" @bind-Value="modelo.IdMarca">
+                        <option value="0">-- Seleccione --</option>
+                        @foreach (var m in marcas)
+                        {
+                            <option value="@m.IdMarca">@m.Nombre</option>
+                        }
+                    </InputSelect>
+                    <a href="/marcas" target="_blank" class="btn btn-outline-secondary" title="Agregar marca (abre en otra pestana)"><i class="bi bi-plus-lg"></i></a>
+                    <button type="button" class="btn btn-outline-secondary" title="Actualizar lista de marcas" @onclick="RecargarMarcas"><i class="bi bi-arrow-clockwise"></i></button>
+                </div>
+                <ValidationMessage For="() => modelo.IdMarca" />
+            </div>
+            <div class="col-12">
+                <label class="form-label">Descripcion</label>
+                <InputTextArea class="form-control" rows="2" @bind-Value="modelo.Descripcion" />
+                <ValidationMessage For="() => modelo.Descripcion" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Precio de costo (Q) *</label>
+                <InputNumber class="form-control" step="0.01" @bind-Value="modelo.PrecioCosto" />
+                <ValidationMessage For="() => modelo.PrecioCosto" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Precio de venta (Q) *</label>
+                <div class="input-group">
+                    <InputNumber class="form-control" step="0.01" @bind-Value="modelo.PrecioVenta" />
+                    <button type="button" class="btn btn-outline-secondary" title="Costo + 25 %" @onclick="Sugerir">+25 %</button>
+                </div>
+                <ValidationMessage For="() => modelo.PrecioVenta" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Existencia *</label>
+                <InputNumber class="form-control" @bind-Value="modelo.Existencia" />
+                <ValidationMessage For="() => modelo.Existencia" />
+            </div>
+            <div class="col-md-8">
+                <label class="form-label">Imagen del producto</label>
+                <InputFile class="form-control" accept=".jpg,.jpeg,.png,.gif,.webp" OnChange="SeleccionarImagen" />
+                <div class="form-text">JPG, PNG, GIF o WEBP. Maximo 2 MB. Solo se guarda la ruta en la base de datos.</div>
+                @if (errorImagen is not null)
+                {
+                    <div class="text-danger small">@errorImagen</div>
+                }
+            </div>
+            <div class="col-md-4 text-center">
+                @if (vistaPrevia is not null)
+                {
+                    <img src="@vistaPrevia" class="vista-previa" alt="Vista previa" />
+                }
+                else if (Api.UrlImagen(modelo.Imagen) is { } actual)
+                {
+                    <img src="@actual" class="vista-previa" alt="Imagen actual" />
+                }
+            </div>
+        </div>
+        <div class="d-flex justify-content-end gap-2 mt-4">
+            <button type="button" class="btn btn-secondary" @onclick="Cancelar">Cancelar</button>
+            <button type="submit" class="btn btn-primary" disabled="@guardando"><i class="bi bi-save"></i> Guardar</button>
+        </div>
+    </EditForm>
+</Modal>
+
+<ConfirmarEliminar Visible="eliminando is not null" Nombre="@(eliminando?.Nombre ?? "")"
+                   OnConfirmar="Eliminar" OnCancelar="() => eliminando = null" />
+
+@code {
+    private const long MaxBytes = 2 * 1024 * 1024;
+    private static readonly string[] Permitidos = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
+
+    private List<Producto> items = new();
+    private List<Marca> marcas = new();
+    private Producto modelo = new();
+    private Producto? eliminando;
+    private IBrowserFile? archivo;
+    private byte[]? datosImagen;
+    private string? vistaPrevia;
+    private string? errorImagen;
+    private string? buscar;
+    private string? errorForm;
+    private bool mostrarForm;
+    private bool guardando;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Ejecutar(async () => marcas = await Api.GetAsync<List<Marca>>("api/Marcas"));
+        await Cargar();
+    }
+
+    private async Task RecargarMarcas() =>
+        await Ejecutar(async () => marcas = await Api.GetAsync<List<Marca>>("api/Marcas"));
+
+    private async Task Cargar()
+    {
+        Cargando = true;
+        await Ejecutar(async () => items = await Api.GetAsync<List<Producto>>(ApiClient.Buscar("api/Productos", buscar)));
+        Cargando = false;
+    }
+
+    private void Nuevo()
+    {
+        modelo = new();
+        LimpiarImagen();
+        errorForm = marcas.Count == 0 ? "Primero registre al menos una marca en el mantenimiento de Marcas." : null;
+        mostrarForm = true;
+    }
+
+    private void Editar(Producto p)
+    {
+        modelo = Clonar(p);
+        modelo.Marca = null;
+        LimpiarImagen();
+        errorForm = null;
+        mostrarForm = true;
+    }
+
+    private void Cancelar() { mostrarForm = false; LimpiarImagen(); }
+
+    private void LimpiarImagen() { archivo = null; datosImagen = null; vistaPrevia = null; errorImagen = null; }
+
+    private void Sugerir() => modelo.PrecioVenta = Math.Round(modelo.PrecioCosto * 1.25m, 2);
+
+    private async Task SeleccionarImagen(InputFileChangeEventArgs e)
+    {
+        LimpiarImagen();
+        var f = e.File;
+        var ext = Path.GetExtension(f.Name).ToLowerInvariant();
+        if (!Permitidos.Contains(ext)) { errorImagen = "Formato no permitido. Use JPG, PNG, GIF o WEBP."; return; }
+        if (f.Size > MaxBytes) { errorImagen = "La imagen no puede superar 2 MB."; return; }
+
+        // Se lee una sola vez en memoria: sirve para la vista previa y para subirla al guardar
+        await using var flujo = f.OpenReadStream(MaxBytes);
+        using var ms = new MemoryStream();
+        await flujo.CopyToAsync(ms);
+        archivo = f;
+        datosImagen = ms.ToArray();
+        vistaPrevia = $"data:{f.ContentType};base64,{Convert.ToBase64String(datosImagen)}";
+    }
+
+    private async Task Guardar()
+    {
+        guardando = true;
+        errorForm = null;
+        try
+        {
+            if (modelo.IdProducto == 0)
+            {
+                var creado = await Api.PostAsync<Producto>("api/Productos", modelo);
+                modelo.IdProducto = creado.IdProducto; // si falla la imagen, un reintento actualiza en vez de duplicar
+            }
+            else
+            {
+                await Api.PutAsync($"api/Productos/{modelo.IdProducto}", modelo);
+            }
+
+            // La imagen se guarda en el servidor; en la BD queda solo la ruta (/images/productos/...)
+            if (archivo is not null && datosImagen is not null)
+            {
+                using var flujo = new MemoryStream(datosImagen);
+                await Api.SubirImagenAsync(modelo.IdProducto, flujo, archivo.Name, archivo.ContentType);
+            }
+
+            mostrarForm = false;
+            LimpiarImagen();
+            Exito("Producto guardado correctamente.");
+            await Cargar();
+        }
+        catch (ApiException ex) { errorForm = ex.Message; }
+        finally { guardando = false; }
+    }
+
+    private async Task Eliminar()
+    {
+        var p = eliminando!;
+        eliminando = null;
+        if (await Ejecutar(() => Api.DeleteAsync($"api/Productos/{p.IdProducto}"), "Producto eliminado."))
+            await Cargar();
+    }
+}

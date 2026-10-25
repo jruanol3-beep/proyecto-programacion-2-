@@ -1,0 +1,131 @@
+@page "/puestos"
+@attribute [Authorize]
+@inherits PaginaBase
+
+<PageTitle>Puestos</PageTitle>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h1 class="h3 m-0"><i class="bi bi-briefcase"></i> Puestos</h1>
+    <div class="d-flex gap-2">
+        <a href="/empleados" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Volver a Empleados</a>
+        <button class="btn btn-primary" @onclick="Nuevo"><i class="bi bi-plus-lg"></i> Nuevo puesto</button>
+    </div>
+</div>
+
+<Alerta Mensaje="@Mensaje" Tipo="@TipoMensaje" OnCerrar="CerrarMensaje" />
+
+<div class="input-group mb-3">
+    <span class="input-group-text"><i class="bi bi-search"></i></span>
+    <input class="form-control" placeholder="Buscar por nombre o descripcion..."
+           @bind="buscar" @bind:event="oninput" @bind:after="Cargar" />
+</div>
+
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr><th style="width:70px">#</th><th>Puesto</th><th>Descripcion</th><th class="text-end" style="width:140px">Acciones</th></tr>
+            </thead>
+            <tbody>
+                @if (Cargando)
+                {
+                    <tr><td colspan="4" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div> Cargando...</td></tr>
+                }
+                else if (items.Count == 0)
+                {
+                    <tr><td colspan="4" class="text-center text-secondary py-4">No hay puestos registrados.</td></tr>
+                }
+                else
+                {
+                    @foreach (var p in items)
+                    {
+                        <tr>
+                            <td>@p.IdPuesto</td>
+                            <td>@p.Nombre</td>
+                            <td>@p.Descripcion</td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-outline-primary" title="Editar" @onclick="() => Editar(p)"><i class="bi bi-pencil"></i></button>
+                                <button class="btn btn-sm btn-outline-danger" title="Eliminar" @onclick="() => eliminando = p"><i class="bi bi-trash"></i></button>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<Modal Visible="mostrarForm" Title="@(modelo.IdPuesto == 0 ? "Nuevo puesto" : "Editar puesto")" Size="modal-md" OnClose="Cancelar">
+    @if (errorForm is not null)
+    {
+        <div class="alert alert-danger">@errorForm</div>
+    }
+    <EditForm Model="modelo" OnValidSubmit="Guardar">
+        <DataAnnotationsValidator />
+        <div class="mb-3">
+            <label class="form-label">Puesto *</label>
+            <InputText class="form-control" @bind-Value="modelo.Nombre" />
+            <ValidationMessage For="() => modelo.Nombre" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Descripcion</label>
+            <InputTextArea class="form-control" rows="3" @bind-Value="modelo.Descripcion" />
+            <ValidationMessage For="() => modelo.Descripcion" />
+        </div>
+        <div class="d-flex justify-content-end gap-2">
+            <button type="button" class="btn btn-secondary" @onclick="Cancelar">Cancelar</button>
+            <button type="submit" class="btn btn-primary" disabled="@guardando"><i class="bi bi-save"></i> Guardar</button>
+        </div>
+    </EditForm>
+</Modal>
+
+<ConfirmarEliminar Visible="eliminando is not null" Nombre="@(eliminando?.Nombre ?? "")"
+                   OnConfirmar="Eliminar" OnCancelar="() => eliminando = null" />
+
+@code {
+    private List<Puesto> items = new();
+    private Puesto modelo = new();
+    private Puesto? eliminando;
+    private string? buscar;
+    private string? errorForm;
+    private bool mostrarForm;
+    private bool guardando;
+
+    protected override async Task OnInitializedAsync() => await Cargar();
+
+    private async Task Cargar()
+    {
+        Cargando = true;
+        await Ejecutar(async () => items = await Api.GetAsync<List<Puesto>>(ApiClient.Buscar("api/Puestos", buscar)));
+        Cargando = false;
+    }
+
+    private void Nuevo() { modelo = new(); errorForm = null; mostrarForm = true; }
+    private void Editar(Puesto p) { modelo = Clonar(p); errorForm = null; mostrarForm = true; }
+    private void Cancelar() => mostrarForm = false;
+
+    private async Task Guardar()
+    {
+        guardando = true;
+        errorForm = null;
+        try
+        {
+            if (modelo.IdPuesto == 0) await Api.PostAsync<Puesto>("api/Puestos", modelo);
+            else await Api.PutAsync($"api/Puestos/{modelo.IdPuesto}", modelo);
+
+            mostrarForm = false;
+            Exito("Puesto guardado correctamente.");
+            await Cargar();
+        }
+        catch (ApiException ex) { errorForm = ex.Message; }
+        finally { guardando = false; }
+    }
+
+    private async Task Eliminar()
+    {
+        var p = eliminando!;
+        eliminando = null;
+        if (await Ejecutar(() => Api.DeleteAsync($"api/Puestos/{p.IdPuesto}"), "Puesto eliminado."))
+            await Cargar();
+    }
+}

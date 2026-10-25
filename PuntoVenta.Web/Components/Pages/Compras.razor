@@ -1,0 +1,381 @@
+@page "/compras"
+@attribute [Authorize]
+@inherits PaginaBase
+@inject IJSRuntime JS
+@inject BorradorCompra Borrador
+
+<PageTitle>Compras</PageTitle>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h1 class="h3 m-0"><i class="bi bi-bag-plus"></i> Compras</h1>
+    <div class="d-flex gap-2">
+        <a href="/proveedores" class="btn btn-outline-secondary"><i class="bi bi-truck"></i> Administrar proveedores</a>
+        @if (!enForm)
+        {
+            <button class="btn btn-primary" @onclick="Nueva"><i class="bi bi-plus-lg"></i> Nueva compra</button>
+        }
+    </div>
+</div>
+
+<Alerta Mensaje="@Mensaje" Tipo="@TipoMensaje" OnCerrar="CerrarMensaje" />
+
+@if (enForm)
+{
+    <EditForm Model="nueva" OnValidSubmit="Guardar" novalidate>
+        <DataAnnotationsValidator />
+
+        <div class="card shadow-sm mb-3">
+            <div class="card-header fw-semibold">Datos de la compra (maestro)</div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Proveedor *</label>
+                        <div class="input-group">
+                            <InputSelect class="form-select" @bind-Value="nueva.IdProveedor">
+                                <option value="0">-- Seleccione un proveedor --</option>
+                                @foreach (var p in proveedores)
+                                {
+                                    <option value="@p.IdProveedor">@p.Nombre (@p.Nit)</option>
+                                }
+                            </InputSelect>
+                            <a href="/proveedores" target="_blank" class="btn btn-outline-secondary" title="Agregar proveedor (abre en otra pestana)"><i class="bi bi-plus-lg"></i></a>
+                            <button type="button" class="btn btn-outline-secondary" title="Actualizar lista de proveedores" @onclick="RecargarProveedores"><i class="bi bi-arrow-clockwise"></i></button>
+                        </div>
+                        <ValidationMessage For="() => nueva.IdProveedor" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Fecha de la orden *</label>
+                        <InputDate class="form-control" @bind-Value="nueva.FechaOrden" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">No. de orden</label>
+                        <input class="form-control" value="Se asigna al guardar" disabled />
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mb-3">
+            <div class="card-header fw-semibold">Productos comprados (detalle)</div>
+            <div class="card-body">
+                <div class="row g-2 align-items-end mb-3">
+                    @* ===== Producto con autocompletado ===== *@
+                    <div class="col-md-5 position-relative">
+                        <label class="form-label">Producto</label>
+                        <input class="form-control" placeholder="Escriba para buscar por nombre o marca..." autocomplete="off"
+                               form="sin-form"
+                               value="@textoProducto" @oninput="AlEscribirProducto"
+                               @onfocus="() => mostrarSugerencias = true"
+                               @onblur="() => mostrarSugerencias = false"
+                               @onkeydown="TeclaProducto" />
+                        @if (mostrarSugerencias)
+                        {
+                            var sugeridos = Sugerencias.ToList();
+                            <div class="list-group position-absolute w-100 shadow" style="z-index: 1050; max-height: 320px; overflow-y: auto;">
+                                @if (sugeridos.Count == 0)
+                                {
+                                    <div class="list-group-item text-secondary">Sin resultados</div>
+                                }
+                                @foreach (var sp in sugeridos)
+                                {
+                                    <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                                            @onmousedown="() => SeleccionarProducto(sp)" @onmousedown:preventDefault>
+                                        <span><strong>@sp.Nombre</strong> <small class="text-secondary">@sp.Marca?.Nombre</small></span>
+                                        <span class="text-nowrap">
+                                            <span class="me-2">Costo Q @sp.PrecioCosto.ToString("N2")</span>
+                                            <span class="badge text-bg-secondary">@sp.Existencia</span>
+                                        </span>
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Cantidad</label>
+                        <input type="number" min="1" step="1" class="form-control" form="sin-form" @bind="lineaCantidad" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Precio de costo (Q)</label>
+                        <input type="number" min="0.01" step="0.01" class="form-control" form="sin-form" @bind="lineaPrecio" />
+                    </div>
+                    <div class="col-md-2">
+                        <button type="button" class="btn btn-success w-100" @onclick="AgregarLinea"><i class="bi bi-plus-circle"></i> Agregar</button>
+                    </div>
+                </div>
+
+                @if (errorLinea is not null)
+                {
+                    <div class="alert alert-warning py-2">@errorLinea</div>
+                }
+
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Producto</th><th class="text-end">Cantidad</th><th class="text-end">Precio costo</th>
+                                <th class="text-end">Nuevo precio venta (+25 %)</th><th class="text-end">Subtotal</th><th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (nueva.Detalles.Count == 0)
+                            {
+                                <tr><td colspan="6" class="text-center text-secondary py-3">Aun no hay productos en la compra.</td></tr>
+                            }
+                            @foreach (var l in nueva.Detalles)
+                            {
+                                <tr>
+                                    <td>@NombreProducto(l.IdProducto)</td>
+                                    <td class="text-end">@l.Cantidad</td>
+                                    <td class="text-end">Q @l.PrecioCosto.ToString("N2")</td>
+                                    <td class="text-end">Q @Math.Round(l.PrecioCosto * 1.25m, 2).ToString("N2")</td>
+                                    <td class="text-end">Q @((l.Cantidad * l.PrecioCosto).ToString("N2"))</td>
+                                    <td class="text-end">
+                                        <button type="button" class="btn btn-sm btn-outline-danger" title="Quitar" @onclick="() => nueva.Detalles.Remove(l)"><i class="bi bi-x-lg"></i></button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr class="table-light">
+                                <th colspan="4" class="text-end">Total de la compra</th>
+                                <th class="text-end">Q @Total.ToString("N2")</th>
+                                <th></th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                <ValidationMessage For="() => nueva.Detalles" />
+
+                <div class="small text-secondary">
+                    Al guardar: la existencia de cada producto aumenta, su precio de costo se actualiza y el precio de venta se calcula como costo + 25 %.
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-end gap-2">
+            <button type="button" class="btn btn-secondary" @onclick="CancelarForm">Cancelar</button>
+            <button type="submit" class="btn btn-primary" disabled="@guardando"><i class="bi bi-save"></i> Guardar compra</button>
+        </div>
+    </EditForm>
+}
+else
+{
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>No. orden</th><th>Fecha</th><th>Proveedor</th><th class="text-end">Total</th><th class="text-end">Detalle</th></tr>
+                </thead>
+                <tbody>
+                    @if (Cargando)
+                    {
+                        <tr><td colspan="5" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div> Cargando...</td></tr>
+                    }
+                    else if (compras.Count == 0)
+                    {
+                        <tr><td colspan="5" class="text-center text-secondary py-4">No hay compras registradas.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var c in compras)
+                        {
+                            <tr>
+                                <td>@c.NoOrdenCompra</td>
+                                <td>@c.FechaOrden.ToString("dd/MM/yyyy")</td>
+                                <td>@c.Proveedor</td>
+                                <td class="text-end">Q @c.Total.ToString("N2")</td>
+                                <td class="text-end"><button class="btn btn-sm btn-outline-primary" @onclick="() => ver = c"><i class="bi bi-eye"></i> Ver</button></td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+<Modal Visible="ver is not null" Title="@($"Compra No. {ver?.NoOrdenCompra}")" OnClose="() => ver = null">
+    @if (ver is not null)
+    {
+        <div class="text-end mb-2">
+            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="() => ImprimirOrden(ver)"><i class="bi bi-printer"></i> Imprimir orden</button>
+        </div>
+        <p class="mb-2"><strong>Proveedor:</strong> @ver.Proveedor<br /><strong>Fecha:</strong> @ver.FechaOrden.ToString("dd/MM/yyyy")</p>
+        <table class="table table-sm">
+            <thead class="table-light"><tr><th>Producto</th><th class="text-end">Cantidad</th><th class="text-end">Precio costo</th><th class="text-end">Subtotal</th></tr></thead>
+            <tbody>
+                @foreach (var d in ver.Detalles)
+                {
+                    <tr><td>@d.Producto</td><td class="text-end">@d.Cantidad</td><td class="text-end">Q @d.PrecioCosto.ToString("N2")</td><td class="text-end">Q @d.Subtotal.ToString("N2")</td></tr>
+                }
+            </tbody>
+            <tfoot><tr class="table-light"><th colspan="3" class="text-end">Total</th><th class="text-end">Q @ver.Total.ToString("N2")</th></tr></tfoot>
+        </table>
+    }
+</Modal>
+
+@code {
+    private List<CompraDto> compras = new();
+    private List<Proveedor> proveedores = new();
+    private List<Producto> productos = new();
+    // La compra en curso vive en BorradorCompra (servicio) para no perderla al ir a otra pantalla
+    private CompraCrearDto nueva { get => Borrador.Nueva; set => Borrador.Nueva = value; }
+    private CompraDto? ver;
+    private bool enForm { get => Borrador.Activo; set => Borrador.Activo = value; }
+    private bool guardando;
+
+    private int lineaProducto;
+    private string textoProducto = "";
+    private bool mostrarSugerencias;
+    private int lineaCantidad = 1;
+    private decimal lineaPrecio;
+    private string? errorLinea;
+
+    private decimal Total => nueva.Detalles.Sum(l => l.Cantidad * l.PrecioCosto);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarLista();
+
+        // Si se dejo una compra a medias, se recupera (hay que volver a cargar los catalogos)
+        if (enForm)
+        {
+            var ok = await Ejecutar(async () =>
+            {
+                proveedores = await Api.GetAsync<List<Proveedor>>("api/Proveedores");
+                productos = await Api.GetAsync<List<Producto>>("api/Productos");
+            });
+            if (!ok) enForm = false;
+        }
+    }
+
+    private async Task CargarLista()
+    {
+        Cargando = true;
+        await Ejecutar(async () => compras = await Api.GetAsync<List<CompraDto>>("api/Compras"));
+        Cargando = false;
+    }
+
+    private async Task Nueva()
+    {
+        CerrarMensaje();
+        var ok = await Ejecutar(async () =>
+        {
+            proveedores = await Api.GetAsync<List<Proveedor>>("api/Proveedores");
+            productos = await Api.GetAsync<List<Producto>>("api/Productos");
+        });
+        if (!ok) return;
+
+        if (proveedores.Count == 0) { Aviso("Primero registre al menos un proveedor."); return; }
+        if (productos.Count == 0) { Aviso("Primero registre al menos un producto."); return; }
+
+        nueva = new CompraCrearDto();
+        lineaProducto = 0; lineaCantidad = 1; lineaPrecio = 0; errorLinea = null;
+        textoProducto = ""; mostrarSugerencias = false;
+        enForm = true;
+    }
+
+    private void CancelarForm()
+    {
+        enForm = false;
+        nueva = new CompraCrearDto();
+    }
+
+    private string NombreProducto(int id) => productos.FirstOrDefault(p => p.IdProducto == id)?.Nombre ?? $"#{id}";
+
+    private async Task RecargarProveedores() =>
+        await Ejecutar(async () => proveedores = await Api.GetAsync<List<Proveedor>>("api/Proveedores"));
+
+    // Sugerencias: cada palabra escrita debe aparecer en nombre, marca o descripcion
+    private IEnumerable<Producto> Sugerencias
+    {
+        get
+        {
+            var palabras = (textoProducto ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var q = productos.AsEnumerable();
+            foreach (var palabra in palabras)
+            {
+                var w = palabra;
+                q = q.Where(p =>
+                    p.Nombre.Contains(w, StringComparison.OrdinalIgnoreCase)
+                    || (p.Marca?.Nombre ?? "").Contains(w, StringComparison.OrdinalIgnoreCase)
+                    || (p.Descripcion ?? "").Contains(w, StringComparison.OrdinalIgnoreCase));
+            }
+            return q.Take(8);
+        }
+    }
+
+    private void AlEscribirProducto(ChangeEventArgs e)
+    {
+        textoProducto = e.Value?.ToString() ?? "";
+        lineaProducto = 0;               // al editar el texto se descarta la seleccion anterior
+        mostrarSugerencias = true;
+        errorLinea = null;
+    }
+
+    private void SeleccionarProducto(Producto p)
+    {
+        lineaProducto = p.IdProducto;
+        textoProducto = p.Nombre;
+        lineaPrecio = p.PrecioCosto;     // precio de costo sugerido
+        mostrarSugerencias = false;
+        errorLinea = null;
+    }
+
+    private void TeclaProducto(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") { mostrarSugerencias = false; return; }
+        if (e.Key != "Enter" || lineaProducto != 0) return;
+        var primero = Sugerencias.FirstOrDefault();
+        if (primero is not null) SeleccionarProducto(primero);
+    }
+
+    private void AgregarLinea()
+    {
+        errorLinea = null;
+        if (lineaProducto == 0) { errorLinea = "Seleccione un producto."; return; }
+        if (lineaCantidad <= 0) { errorLinea = "La cantidad debe ser mayor a cero."; return; }
+        if (lineaPrecio <= 0) { errorLinea = "El precio de costo debe ser mayor a cero."; return; }
+
+        var existente = nueva.Detalles.FirstOrDefault(l => l.IdProducto == lineaProducto);
+        if (existente is not null)
+        {
+            existente.Cantidad += lineaCantidad;
+            existente.PrecioCosto = lineaPrecio;
+        }
+        else
+        {
+            nueva.Detalles.Add(new CompraDetalleCrearDto
+            {
+                IdProducto = lineaProducto,
+                Cantidad = lineaCantidad,
+                PrecioCosto = lineaPrecio
+            });
+        }
+        lineaProducto = 0; lineaCantidad = 1; lineaPrecio = 0;
+        textoProducto = ""; mostrarSugerencias = false;
+    }
+
+    private async Task ImprimirOrden(CompraDto c) =>
+        await JS.InvokeVoidAsync("pvImprimir", DocumentoImpresion.OrdenCompra(c));
+
+    private async Task Guardar()
+    {
+        guardando = true;
+        try
+        {
+            var creada = await Api.PostAsync<CompraDto>("api/Compras", nueva);
+            enForm = false;
+            nueva = new CompraCrearDto();
+            Exito($"Compra No. {creada.NoOrdenCompra} registrada. Existencias y precios actualizados.");
+            await CargarLista();
+            ver = creada;                    // muestra la orden y abre la pantalla de impresion
+            await ImprimirOrden(creada);
+        }
+        catch (ApiException ex)
+        {
+            Fallo(ex.Message);
+        }
+        finally { guardando = false; }
+    }
+}
